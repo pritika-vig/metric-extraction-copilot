@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+venv/
+env/
+.venv/
+
+# VSCode settings
+.vscode/
+
+# Environment variables
+.env
+
+# Pytest
+.cache/
+*.cover
+coverage.xml
+htmlcov/
+
+# Logs
+*.log
+
+# Supabase (local development)
+supabase/.temp/
+supabase/.dev/
+
+# OS files
+.DS_Store
+Thumbs.db
