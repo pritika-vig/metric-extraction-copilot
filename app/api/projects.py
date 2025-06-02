@@ -3,9 +3,11 @@ from pydantic import BaseModel
 
 router = APIRouter()
 
+
 class ProjectCreateRequest(BaseModel):
     query: str
     sources: list[str]
+
 
 @router.post("/projects")
 def create_project(req: ProjectCreateRequest):

@@ -1,0 +1,13 @@
+[tool.black]
+line-length = 145
+target-version = ['py311']  # or your Python version
+
+[tool.isort]
+profile = "black"
+line_length = 145
+known_third_party = ["fastapi", "supabase"]  # add others as needed
+src_paths = ["your_module", "tests"]
+
+[tool.flake8]
+max-line-length = 145
+extend-ignore = ["E203", "W503"]
