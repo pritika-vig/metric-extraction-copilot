@@ -103,7 +103,20 @@ await client.post("/rest/v1/filters", headers=headers, json={
 - `config_id`: `UUID`
 - `field_name`, `description`: `TEXT`
 
----
+**Constraints**:
+- **Create/Delete allowed**
+- **Update is not allowed**: enforced via RLS `WITH CHECK`. A `PATCH` returns 200 but no changes occur.
+
+**FastAPI Tip**:
+```python
+# Create a new extraction field
+await client.post("/rest/v1/extraction_fields", headers=headers, json={
+    "id": str(uuid4()),
+    "config_id": config_id,
+    "field_name": "Author",
+    "description": "Primary author of the paper"
+})
+```
 
 ### `extracted_fields`
 - Results of an extraction field applied to a paper.
@@ -125,12 +138,15 @@ Note: Collaborator policies are not yet implemented, but are planned.
 
 ### General Rules
 
-| Table | Read | Write | Notes |
-|-------|------|-------|-------|
-| `projects` | Owner + Collaborators | Owner | |
-| `papers`, `filters`, `extraction_configs`, `extraction_fields`, `extracted_fields` | Owner via project | Owner only | |
-| `filters` | **Read/Create/Delete allowed** | **Update blocked via RLS** | |
-| `paper_filter_results` | Owner via paper+filter | Owner | Cascade-deleted if parent is deleted |
+| Table                    | Read                 | Write (Create/Delete) | Update | Notes |
+|--------------------------|----------------------|------------------------|--------|-------|
+| `projects`               | Owner + Collaborators | Owner                 | ✓      | |
+| `papers`                 | Owner via project     | Owner                 | ✓      | |
+| `filters`                | Owner via project     | ✓                     | ❌     | Update blocked via RLS |
+| `extraction_configs`     | Owner via project     | ✓                     | ✓      | |
+| `extraction_fields`      | Owner via project     | ✓                     | ❌     | Update blocked via RLS |
+| `extracted_fields`       | Owner via project     | ✓                     | ✓      | |
+| `paper_filter_results`   | Owner via paper+filter| ✓                     | ✓      | Cascade-deleted if parent is deleted |
 
 ---
 
@@ -166,8 +182,111 @@ assert resp.json() == []  # RLS silently blocks update
 
 ---
 
-## ⚠️ Quirks to Know
+## 🔁 Deletion Behavior and Cascade Maps
 
+This section documents what happens when you delete various core entities. Deletions follow PostgreSQL `ON DELETE CASCADE` foreign key constraints and/or triggers. **Row-Level Security (RLS)** can interfere with visibility, so test these flows carefully.
+
+---
+
+### 1️⃣ Deleting a `project`
+
+Deleting a project removes nearly all related data in the research pipeline.
+
+<details>
+<summary>Click to view graph (Mermaid)</summary>
+
+```mermaid
+graph TD
+    Project["🗂 project"] --> Papers["📄 papers"]
+    Project --> Filters["🔍 filters"]
+    Project --> Sources["🌐 project_sources"]
+    Project --> Collaborators["👥 collaborators"]
+    Project --> ExtractionConfigs["⚙️ extraction_configs"]
+
+    ExtractionConfigs --> ExtractionFields["🏷 extraction_fields"]
+    ExtractionFields --> ExtractedFields["📥 extracted_fields"]
+
+    Papers --> ExtractedFields
+    Papers --> PaperFilterResults["✅ paper_filter_results"]
+
+    Filters --> PaperFilterResults
+```
+</details>
+
+---
+
+### 2️⃣ Deleting a `paper`
+
+Removes downstream extraction results and any filter result rows.
+
+<details>
+<summary>Click to view graph (Mermaid)</summary>
+
+```mermaid
+graph TD
+    Paper["📄 paper"] --> ExtractedFields["📥 extracted_fields"]
+    Paper --> PaperFilterResults["✅ paper_filter_results"]
+```
+</details>
+
+---
+
+### 3️⃣ Deleting an `extraction_config`
+
+Deletes the config and its fields, and all extracted values associated with those fields.
+
+<details>
+<summary>Click to view graph (Mermaid)</summary>
+
+```mermaid
+graph TD
+    ExtractionConfig["⚙️ extraction_config"] --> ExtractionFields["🏷 extraction_fields"]
+    ExtractionFields --> ExtractedFields["📥 extracted_fields"]
+```
+</details>
+
+---
+
+### 4️⃣ Deleting an `extraction_field`
+
+Deletes just the `extracted_fields` that depend on it.
+
+<details>
+<summary>Click to view graph (Mermaid)</summary>
+
+```mermaid
+graph TD
+    ExtractionField["🏷 extraction_field"] --> ExtractedFields["📥 extracted_fields"]
+```
+</details>
+
+---
+
+### 5️⃣ Deleting a `filter`
+
+Removes the `paper_filter_results` associated with the filter.
+
+<details>
+<summary>Click to view graph (Mermaid)</summary>
+
+```mermaid
+graph TD
+    Filter["🔍 filter"] --> PaperFilterResults["✅ paper_filter_results"]
+```
+</details>
+
+---
+
+### ⚠️ Developer Notes
+
+- **All deletions require RLS visibility**. If the deleting user cannot "see" the child rows (due to RLS), cascades may silently fail.
+- **Postgres `ON DELETE CASCADE` is used** to enforce these deletions. Some relationships (like `paper_filter_results`) rely on composite references (e.g., paper + filter).
+- **Always verify deletions in tests** using retry loops or polling endpoints, since async deletes can delay visibility.
 - **RLS silent failures**: Supabase returns `200 OK` even if update is blocked (e.g. filters). Always verify changes by re-reading the row.
 - **Deletion is cascade-based** but depends on PostgreSQL triggers and RLS visibility: ensure cascading deletes have visibility into child rows.
+---
+
+## Quirks to Know
 - **UUIDs**: All IDs are UUIDv4 — never use sequential integers.
+- **extraction_fields are immutable**: users can create or delete fields, but updates (e.g. changing `field_name`) will silently fail with a `200 OK`.
+
