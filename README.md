@@ -277,16 +277,13 @@ graph TD
 
 ---
 
-### ⚠️ Developer Notes
+### Deletion Developer Notes
 
 - **All deletions require RLS visibility**. If the deleting user cannot "see" the child rows (due to RLS), cascades may silently fail.
 - **Postgres `ON DELETE CASCADE` is used** to enforce these deletions. Some relationships (like `paper_filter_results`) rely on composite references (e.g., paper + filter).
 - **Always verify deletions in tests** using retry loops or polling endpoints, since async deletes can delay visibility.
-- **RLS silent failures**: Supabase returns `200 OK` even if update is blocked (e.g. filters). Always verify changes by re-reading the row.
-- **Deletion is cascade-based** but depends on PostgreSQL triggers and RLS visibility: ensure cascading deletes have visibility into child rows.
 ---
 
 ## Quirks to Know
 - **UUIDs**: All IDs are UUIDv4 — never use sequential integers.
-- **extraction_fields are immutable**: users can create or delete fields, but updates (e.g. changing `field_name`) will silently fail with a `200 OK`.
 
