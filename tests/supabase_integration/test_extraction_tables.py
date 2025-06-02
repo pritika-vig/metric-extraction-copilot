@@ -326,3 +326,54 @@ async def test_deleting_field_cascades_extracted(test_user):
 
         extract_gone = await wait_until_deleted(f"{SUPABASE_URL}/rest/v1/extracted_fields?id=eq.{extract_id}", headers)
         assert extract_gone, f"Extracted field {extract_id} still exists after deleting field {field_id}"
+
+
+@pytest.mark.asyncio
+async def test_user_cannot_update_extraction_field(test_user):
+    """Verify that users are blocked from updating extraction_fields (RLS denied)."""
+    async with httpx.AsyncClient() as client:
+        project_id = await create_project(client, test_user["token"], test_user["id"])
+        config_id = str(uuid.uuid4())
+        field_id = str(uuid.uuid4())
+        headers = headers_template(test_user["token"])
+        now = datetime.now(timezone.utc).isoformat()
+
+        # Create the required config
+        await client.post(
+            f"{SUPABASE_URL}/rest/v1/extraction_configs",
+            headers=headers,
+            json={"id": config_id, "project_id": project_id, "created_at": now},
+        )
+
+        # Create an extraction_field
+        await client.post(
+            f"{SUPABASE_URL}/rest/v1/extraction_fields",
+            headers=headers,
+            json={
+                "id": field_id,
+                "config_id": config_id,
+                "field_name": "Original Field",
+                "description": "Initial description",
+                "created_at": now,
+            },
+        )
+
+        # Attempt to update the field_name (should be denied)
+        update_resp = await client.patch(
+            f"{SUPABASE_URL}/rest/v1/extraction_fields?id=eq.{field_id}",
+            headers=headers,
+            json={"field_name": "Hacked Name"},
+        )
+
+        # RLS should prevent this, but it returns 200.
+        assert update_resp.status_code == 200
+
+        # Optional: verify value wasn't changed
+        read_resp = await client.get(
+            f"{SUPABASE_URL}/rest/v1/extraction_fields?id=eq.{field_id}",
+            headers=headers,
+        )
+        assert read_resp.status_code == 200
+        data = read_resp.json()
+        assert len(data) == 1
+        assert data[0]["field_name"] == "Original Field"
