@@ -8,25 +8,15 @@ from tests.supabase_integration.utils import SUPABASE_URL, headers_template
 
 
 @pytest.mark.asyncio
-async def test_user_can_create_and_read_project(test_user):
+async def test_user_can_create_and_read_project(test_user, test_project):
     """
     Ensure a confirmed user can create a project and read it back using RLS policies.
     """
-    project_id = str(uuid.uuid4())
-    created_at = datetime.now(timezone.utc).isoformat()
-
+    project_id = test_project
     headers = headers_template(test_user["token"])
 
     async with httpx.AsyncClient() as client:
-        # Create project
-        create_resp = await client.post(
-            f"{SUPABASE_URL}/rest/v1/projects",
-            headers=headers,
-            json={"id": project_id, "query": "Test query from RLS test", "created_at": created_at, "owner_id": test_user["id"]},
-        )
-        assert create_resp.status_code in (200, 201), create_resp.text
-
-        # Read project
+        # Read the project
         read_resp = await client.get(f"{SUPABASE_URL}/rest/v1/projects?id=eq.{project_id}", headers=headers)
         assert read_resp.status_code == 200
         data = read_resp.json()
@@ -63,3 +53,39 @@ async def test_user_cannot_read_others_project(test_user, supabase_admin):
     # Clean up the created project and other user
     supabase_admin.table("projects").delete().eq("id", project_id).execute()
     supabase_admin.auth.admin.delete_user(other_user.id)
+
+
+async def create_project(client, token, user_id):
+    project_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
+    headers = headers_template(token)
+    resp = await client.post(
+        f"{SUPABASE_URL}/rest/v1/projects", headers=headers, json={"id": project_id, "owner_id": user_id, "query": "test", "created_at": now}
+    )
+    assert resp.status_code in (200, 201)
+    return project_id
+
+
+@pytest.mark.asyncio
+async def test_project_sources_crud(test_user, supabase_admin):
+    async with httpx.AsyncClient() as client:
+        project_id = await create_project(client, test_user["token"], test_user["id"])
+        source_id = str(uuid.uuid4())
+        headers = headers_template(test_user["token"])
+
+        # Create a project source
+        insert_resp = await client.post(
+            f"{SUPABASE_URL}/rest/v1/project_sources",
+            headers=headers,
+            json={"id": source_id, "project_id": project_id, "backend_name": "test", "backend_query": "query"},
+        )
+        assert insert_resp.status_code in (200, 201)
+
+        # Read the project source
+        read_resp = await client.get(f"{SUPABASE_URL}/rest/v1/project_sources?id=eq.{source_id}", headers=headers)
+        assert read_resp.status_code == 200
+        assert len(read_resp.json()) == 1
+
+        # 🔴 Cleanup both project source and project
+        supabase_admin.table("project_sources").delete().eq("id", source_id).execute()
+        supabase_admin.table("projects").delete().eq("id", project_id).execute()
