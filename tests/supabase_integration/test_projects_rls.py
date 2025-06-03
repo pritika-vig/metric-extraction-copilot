@@ -25,6 +25,22 @@ async def test_user_can_create_and_read_project(test_user, test_project):
 
 
 @pytest.mark.asyncio
+async def test_user_can_not_create_project_owned_by_another(test_user, test_project):
+    """
+    Ensure a confirmed user can create a project and read it back using RLS policies.
+    """
+    headers = headers_template(test_user["token"])
+
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            f"{SUPABASE_URL}/rest/v1/projects",
+            headers=headers,
+            json={"id": str(uuid.uuid4()), "owner_id": str(uuid.uuid4()), "description": "Bad insert"},
+        )
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
 async def test_user_cannot_read_others_project(test_user, supabase_admin):
     """
     Ensure that a user cannot access a project owned by another user.
