@@ -23,7 +23,9 @@ async def create_project(client, token, user_id):
     now = datetime.now(timezone.utc).isoformat()
     headers = headers_template(token)
     resp = await client.post(
-        f"{SUPABASE_URL}/rest/v1/projects", headers=headers, json={"id": project_id, "owner_id": user_id, "query": "test", "created_at": now}
+        f"{SUPABASE_URL}/rest/v1/projects",
+        headers=headers,
+        json={"id": project_id, "owner_id": user_id, "description": "test", "created_at": now},
     )
     assert resp.status_code in (200, 201)
     return project_id

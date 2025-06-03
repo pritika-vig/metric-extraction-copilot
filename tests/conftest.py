@@ -92,7 +92,7 @@ async def test_project(test_user, supabase_admin):
         resp = await client.post(
             f"{SUPABASE_URL}/rest/v1/projects",
             headers=headers,
-            json={"id": project_id, "query": "Test query from RLS test", "created_at": created_at, "owner_id": test_user["id"]},
+            json={"id": project_id, "description": "Test desc from RLS test", "created_at": created_at, "owner_id": test_user["id"]},
         )
         assert resp.status_code in (200, 201), resp.text
 
@@ -129,7 +129,7 @@ def other_user_with_project(supabase_admin):
     user = supabase_admin.auth.admin.create_user({"email": user_email, "password": password, "email_confirm": True}).user
 
     project_id = str(uuid.uuid4())
-    supabase_admin.table("projects").insert({"id": project_id, "owner_id": user.id, "query": "other project", "created_at": now}).execute()
+    supabase_admin.table("projects").insert({"id": project_id, "owner_id": user.id, "description": "other project", "created_at": now}).execute()
 
     yield user, project_id
 
@@ -147,7 +147,7 @@ async def test_project_with_cleanup(test_user, supabase_admin):
         resp = await client.post(
             f"{SUPABASE_URL}/rest/v1/projects",
             headers=headers,
-            json={"id": project_id, "owner_id": test_user["id"], "query": "filter test", "created_at": now},
+            json={"id": project_id, "owner_id": test_user["id"], "description": "filter test", "created_at": now},
         )
         assert resp.status_code in (200, 201)
 
@@ -165,7 +165,7 @@ def other_user_with_filter_project(supabase_admin):
     project_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
     supabase_admin.table("projects").insert(
-        {"id": project_id, "owner_id": user.id, "query": "other user's project", "created_at": now}
+        {"id": project_id, "owner_id": user.id, "description": "other user's project", "created_at": now}
     ).execute()
 
     yield user, project_id
@@ -260,7 +260,7 @@ def other_user_with_extraction_data(supabase_admin):
     paper_id = str(uuid.uuid4())
     extract_id = str(uuid.uuid4())
 
-    supabase_admin.table("projects").insert({"id": project_id, "owner_id": user.id, "query": "other", "created_at": now}).execute()
+    supabase_admin.table("projects").insert({"id": project_id, "owner_id": user.id, "description": "other", "created_at": now}).execute()
 
     supabase_admin.table("extraction_configs").insert({"id": config_id, "project_id": project_id, "created_at": now}).execute()
 
