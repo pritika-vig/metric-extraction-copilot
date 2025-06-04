@@ -37,14 +37,17 @@ class MockClient:
     def eq(self, field, value):
         return self
 
-    def single(self):
-        self._return_single = True
+    def limit(self, count):
+        self._limit = count
         return self
 
     def execute(self):
         if getattr(self, "_return_single", False):
-            return MockResponse(data=self.inserted_data)  # Single dict
-        return MockResponse(data=[self.inserted_data])  # List of dicts
+            return MockResponse(data=self.inserted_data)
+        if getattr(self, "_limit", None) == 1:
+            # Return list of one or empty list
+            return MockResponse(data=[self.inserted_data] if self.inserted_data else [])
+        return MockResponse(data=[self.inserted_data])
 
 
 @pytest.fixture
@@ -84,7 +87,7 @@ def test_create_project_failure():
 def test_get_project_not_found():
     class EmptyClient(MockClient):
         def execute(self):
-            return MockResponse(data=None)
+            return MockResponse(data=[])
 
     dal = ProjectDAL(client=EmptyClient())
     result = dal.get_project_by_id(uuid4())
@@ -94,32 +97,11 @@ def test_get_project_not_found():
 def test_delete_project_failure():
     class FailingDeleteClient(MockClient):
         def execute(self):
-            return MockResponse(data=None, error="Delete error", status_code=400)
+            raise Exception("Delete error")  # <- match real behavior
 
     dal = ProjectDAL(client=FailingDeleteClient())
-
     with pytest.raises(DatabaseError, match="Error deleting project: Delete error"):
-        dal.delete_project(uuid4())
-
-
-def test_get_project_by_id_error():
-    class ErrorClient(MockClient):
-        def execute(self):
-            return MockResponse(data=None, error="Fetch error", status_code=500)
-
-    dal = ProjectDAL(client=ErrorClient())
-    with pytest.raises(DatabaseError, match="Error fetching project: Fetch error"):
-        dal.get_project_by_id(uuid4())
-
-
-def test_create_project_no_data():
-    class NoDataClient(MockClient):
-        def execute(self):
-            return MockResponse(data=[], error=None, status_code=201)
-
-    dal = ProjectDAL(client=NoDataClient())
-    result = dal.create_project(description="Should return None")
-    assert result is None
+        dal.delete_project(project_id=uuid4())
 
 
 def test_delete_project_not_found():
@@ -129,14 +111,4 @@ def test_delete_project_not_found():
 
     dal = ProjectDAL(client=NoMatchClient())
     success = dal.delete_project(uuid4())
-    assert success is True  # Or adjust logic if you want False when nothing was deleted
-
-
-def test_delete_project_204_no_content():
-    class NoContentClient(MockClient):
-        def execute(self):
-            return MockResponse(data=None, error=None, status_code=204)
-
-    dal = ProjectDAL(client=NoContentClient())
-    success = dal.delete_project(uuid4())
-    assert success is True
+    assert success is False

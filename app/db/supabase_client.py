@@ -1,15 +1,16 @@
 # app/db/supabase_client.py
 import os
 
-from dotenv import load_dotenv
-from supabase import Client, create_client
+from supabase import create_client
 
-load_dotenv()
 
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+def get_supabase_client_for_user(jwt: str):
+    url = os.getenv("SUPABASE_PROJECT_URL")
+    anon_key = os.getenv("SUPABASE_ANON_KEY")
 
-if not SUPABASE_URL or not SUPABASE_KEY:
-    raise EnvironmentError("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set in environment")
+    client = create_client(url, anon_key)
 
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+    # Manually inject the Authorization header for RLS
+    client.postgrest.auth(jwt)
+
+    return client
