@@ -1,4 +1,3 @@
-# tests/db/test_projects_dal.py
 from uuid import uuid4
 
 import pytest
@@ -19,6 +18,8 @@ class MockClient:
     def __init__(self):
         self._data = {}
         self.inserted_data = None
+        self.table_name = None
+        self._limit = None
 
     def table(self, name):
         self.table_name = name
@@ -42,10 +43,7 @@ class MockClient:
         return self
 
     def execute(self):
-        if getattr(self, "_return_single", False):
-            return MockResponse(data=self.inserted_data)
-        if getattr(self, "_limit", None) == 1:
-            # Return list of one or empty list
+        if self._limit == 1:
             return MockResponse(data=[self.inserted_data] if self.inserted_data else [])
         return MockResponse(data=[self.inserted_data])
 
@@ -56,7 +54,11 @@ def mock_dal():
 
 
 def test_create_project(mock_dal):
+    inserted_project = {"id": str(uuid4()), "description": "A test project"}
+
+    mock_dal.client.inserted_data = inserted_project
     result = mock_dal.create_project(description="A test project")
+
     assert result is not None
     assert result["description"] == "A test project"
 
@@ -70,8 +72,8 @@ def test_get_project_by_id(mock_dal):
 
 
 def test_delete_project(mock_dal):
-    success = mock_dal.delete_project(uuid4())
-    assert success is True
+    result = mock_dal.delete_project(uuid4())
+    assert result is True
 
 
 def test_create_project_failure():
@@ -80,7 +82,7 @@ def test_create_project_failure():
             return MockResponse(data=None, error="Insert failed", status_code=400)
 
     dal = ProjectDAL(client=FailingClient())
-    with pytest.raises(Exception):
+    with pytest.raises(DatabaseError):
         dal.create_project(description="Fail this")
 
 
@@ -97,7 +99,7 @@ def test_get_project_not_found():
 def test_delete_project_failure():
     class FailingDeleteClient(MockClient):
         def execute(self):
-            raise Exception("Delete error")  # <- match real behavior
+            raise Exception("Delete error")
 
     dal = ProjectDAL(client=FailingDeleteClient())
     with pytest.raises(DatabaseError, match="Error deleting project: Delete error"):
@@ -110,5 +112,41 @@ def test_delete_project_not_found():
             return MockResponse(data=None, error="Nothing found", status_code=404)
 
     dal = ProjectDAL(client=NoMatchClient())
-    success = dal.delete_project(uuid4())
-    assert success is False
+    result = dal.delete_project(uuid4())
+    assert result is False
+
+
+def test_insert_project_sources(mock_dal):
+    source_data = [
+        {"id": str(uuid4()), "project_id": str(uuid4()), "backend_name": "arXiv", "backend_query": "machine learning"},
+        {"id": str(uuid4()), "project_id": str(uuid4()), "backend_name": "PubMed", "backend_query": "cancer genomics"},
+    ]
+    mock_dal.insert_project_sources(source_data)
+    assert mock_dal.client.inserted_data == source_data
+    assert mock_dal.client.table_name == "project_sources"
+
+
+def test_insert_project_sources_failure():
+    class FailingInsertClient(MockClient):
+        def execute(self):
+            raise Exception("Insert error")
+
+    dal = ProjectDAL(client=FailingInsertClient())
+    with pytest.raises(DatabaseError, match="Error inserting project sources: Insert error"):
+        dal.insert_project_sources([{"id": str(uuid4()), "project_id": str(uuid4()), "backend_name": "Test", "backend_query": "query"}])
+
+
+def test_delete_project_sources(mock_dal):
+    project_id = uuid4()
+    mock_dal.delete_project_sources(project_id)
+    assert mock_dal.client.table_name == "project_sources"
+
+
+def test_delete_project_sources_failure():
+    class FailingDeleteClient(MockClient):
+        def execute(self):
+            raise Exception("Delete error")
+
+    dal = ProjectDAL(client=FailingDeleteClient())
+    with pytest.raises(DatabaseError, match="Error deleting project sources: Delete error"):
+        dal.delete_project_sources(uuid4())
